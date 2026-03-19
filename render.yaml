@@ -1,0 +1,25 @@
+services:
+  - type: web
+    name: cms-bridge
+    runtime: node
+    plan: starter
+    buildCommand: npm ci && npm run build
+    startCommand: npm start
+    healthCheckPath: /api/health
+    disk:
+      name: cms-bridge-data
+      mountPath: /var/data
+      sizeGB: 1
+    envVars:
+      - key: NODE_VERSION
+        value: 20
+      - key: HOST
+        value: 0.0.0.0
+      - key: DB_PATH
+        value: /var/data/cms-bridge.db
+      - key: LOG_LEVEL
+        value: info
+      - key: AIRTABLE_API_KEY
+        sync: false
+      - key: WEBFLOW_API_TOKEN
+        sync: false

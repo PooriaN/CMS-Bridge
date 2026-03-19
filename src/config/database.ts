@@ -6,7 +6,7 @@ let db: Database.Database;
 
 export function getDatabase(): Database.Database {
   if (!db) {
-    const dbPath = process.env.DB_PATH || './data/cms-bridge.db';
+    const dbPath = process.env.DB_PATH || (process.env.RENDER ? '/var/data/cms-bridge.db' : './data/cms-bridge.db');
     const dir = path.dirname(dbPath);
     if (!fs.existsSync(dir)) {
       fs.mkdirSync(dir, { recursive: true });

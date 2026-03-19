@@ -10,7 +10,7 @@ import { createLogger } from './utils/logger';
 
 const log = createLogger('app');
 const PORT = parseInt(process.env.PORT || '3456', 10);
-const HOST = process.env.HOST || 'localhost';
+const HOST = process.env.HOST || '0.0.0.0';
 
 // Initialize database
 getDatabase();
