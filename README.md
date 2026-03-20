@@ -10,13 +10,15 @@ Self-hosted Airtable <-> Webflow CMS sync bridge.
 npm ci
 ```
 
-2. Copy the environment template and fill in your credentials:
+2. Start a local Postgres database and create a database named `cms_bridge`.
+
+3. Copy the environment template and fill in your credentials:
 
 ```bash
 cp .env.example .env
 ```
 
-3. Start the development server:
+4. Start the development server:
 
 ```bash
 npm run dev
@@ -26,15 +28,11 @@ The app defaults to `http://0.0.0.0:3456` and exposes a health check at `/api/he
 
 ## Render deployment
 
-This repository includes a `render.yaml` blueprint for Render.
+This repository includes a `render.yaml` blueprint that provisions:
 
-Render configuration:
-
-- Build command: `npm ci && npm run build`
-- Start command: `npm start`
-- Health check path: `/api/health`
-- Persistent disk mount: `/var/data`
-- Production database path: `/var/data/cms-bridge.db`
+- a free Render Postgres database
+- a free Node web service
+- the `DATABASE_URL` connection string from that database
 
 Required environment variables:
 
@@ -46,10 +44,15 @@ Optional environment variables:
 - `LOG_LEVEL`
 - `HOST`
 - `PORT`
-- `DB_PATH`
+- `PGSSLMODE`
 
-If you deploy manually instead of using the blueprint, make sure the service:
+Manual Render settings if you are not using the Blueprint:
 
-- listens on `0.0.0.0`
-- has a persistent disk attached
-- stores SQLite on that disk instead of the ephemeral filesystem
+- Build command: `npm ci && npm run build`
+- Start command: `npm start`
+- Health check path: `/api/health`
+- `DATABASE_URL`: your Render Postgres connection string
+
+## Free tier caveat
+
+The app can now run on free Render without a paid disk, but scheduled syncs are not guaranteed on a free web service because free instances can spin down when idle. Manual syncs and on-demand use are the safer fit for the free plan.

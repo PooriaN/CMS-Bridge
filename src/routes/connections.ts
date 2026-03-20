@@ -12,16 +12,14 @@ import { listSyncLogs } from '../models/sync-log';
 
 const router = Router();
 
-// List all connections
-router.get('/', (_req, res) => {
-  const connections = listConnections();
+router.get('/', async (_req, res) => {
+  const connections = await listConnections();
   res.json({ connections });
 });
 
-// Get a single connection
-router.get('/:id', (req, res) => {
+router.get('/:id', async (req, res) => {
   const id = req.params.id as string;
-  const connection = getConnection(id);
+  const connection = await getConnection(id);
   if (!connection) {
     res.status(404).json({ error: 'Connection not found' });
     return;
@@ -29,10 +27,9 @@ router.get('/:id', (req, res) => {
   res.json({ connection });
 });
 
-// Create a connection
-router.post('/', (req, res) => {
+router.post('/', async (req, res) => {
   try {
-    const connection = createConnection(req.body);
+    const connection = await createConnection(req.body);
     res.status(201).json({ connection });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
@@ -40,10 +37,9 @@ router.post('/', (req, res) => {
   }
 });
 
-// Update a connection
-router.patch('/:id', (req, res) => {
+router.patch('/:id', async (req, res) => {
   const id = req.params.id as string;
-  const connection = updateConnection(id, req.body);
+  const connection = await updateConnection(id, req.body);
   if (!connection) {
     res.status(404).json({ error: 'Connection not found' });
     return;
@@ -51,10 +47,9 @@ router.patch('/:id', (req, res) => {
   res.json({ connection });
 });
 
-// Delete a connection
-router.delete('/:id', (req, res) => {
+router.delete('/:id', async (req, res) => {
   const id = req.params.id as string;
-  const success = deleteConnection(id);
+  const success = await deleteConnection(id);
   if (!success) {
     res.status(404).json({ error: 'Connection not found' });
     return;
@@ -62,28 +57,26 @@ router.delete('/:id', (req, res) => {
   res.status(204).send();
 });
 
-// ─── Field Mappings ─────────────────────────────────────────────
-
-router.get('/:id/mappings', (req, res) => {
+router.get('/:id/mappings', async (req, res) => {
   const id = req.params.id as string;
-  const connection = getConnection(id);
+  const connection = await getConnection(id);
   if (!connection) {
     res.status(404).json({ error: 'Connection not found' });
     return;
   }
-  const mappings = getFieldMappings(id);
+  const mappings = await getFieldMappings(id);
   res.json({ mappings });
 });
 
-router.put('/:id/mappings', (req, res) => {
+router.put('/:id/mappings', async (req, res) => {
   const id = req.params.id as string;
-  const connection = getConnection(id);
+  const connection = await getConnection(id);
   if (!connection) {
     res.status(404).json({ error: 'Connection not found' });
     return;
   }
   try {
-    const mappings = setFieldMappings(id, req.body.mappings || []);
+    const mappings = await setFieldMappings(id, req.body.mappings || []);
     res.json({ mappings });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
@@ -91,17 +84,15 @@ router.put('/:id/mappings', (req, res) => {
   }
 });
 
-// ─── Sync Logs ──────────────────────────────────────────────────
-
-router.get('/:id/logs', (req, res) => {
+router.get('/:id/logs', async (req, res) => {
   const id = req.params.id as string;
-  const connection = getConnection(id);
+  const connection = await getConnection(id);
   if (!connection) {
     res.status(404).json({ error: 'Connection not found' });
     return;
   }
-  const limit = parseInt(req.query.limit as string) || 20;
-  const logs = listSyncLogs(id, limit);
+  const limit = parseInt(req.query.limit as string, 10) || 20;
+  const logs = await listSyncLogs(id, limit);
   res.json({ logs });
 });
 

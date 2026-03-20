@@ -62,16 +62,66 @@ function extractAirtableRecordIds(rawValue: unknown): string[] {
     .filter((id): id is string => typeof id === 'string' && id.length > 0);
 }
 
+async function findLinkedConnectionByAirtableRecord(
+  currentConnectionId: string,
+  airtableRecordId: string
+): Promise<string | undefined> {
+  const connections = await listConnections();
+  for (const conn of connections) {
+    if (conn.id === currentConnectionId) continue;
+    if (await getRecordMapping(conn.id, airtableRecordId)) {
+      return conn.id;
+    }
+  }
+  return undefined;
+}
+
+async function findLinkedConnectionByWebflowItem(
+  currentConnectionId: string,
+  webflowItemId: string
+): Promise<string | undefined> {
+  const connections = await listConnections();
+  for (const conn of connections) {
+    if (conn.id === currentConnectionId) continue;
+    if (await getRecordMapping(conn.id, undefined, webflowItemId)) {
+      return conn.id;
+    }
+  }
+  return undefined;
+}
+
+async function getMappedWebflowItemIds(linkedConnectionId: string, airtableRecordIds: string[]): Promise<string[]> {
+  const webflowIds: string[] = [];
+  for (const airtableRecordId of airtableRecordIds) {
+    const mapping = await getRecordMapping(linkedConnectionId, airtableRecordId);
+    if (mapping?.webflow_item_id) {
+      webflowIds.push(mapping.webflow_item_id);
+    }
+  }
+  return webflowIds;
+}
+
+async function getMappedAirtableRecordIds(linkedConnectionId: string, webflowItemIds: string[]): Promise<string[]> {
+  const airtableIds: string[] = [];
+  for (const webflowItemId of webflowItemIds) {
+    const mapping = await getRecordMapping(linkedConnectionId, undefined, webflowItemId);
+    if (mapping?.airtable_record_id) {
+      airtableIds.push(mapping.airtable_record_id);
+    }
+  }
+  return airtableIds;
+}
+
 export async function runSync(connection: Connection, options: SyncOptions): Promise<SyncLog> {
-  const syncLog = createSyncLog(connection.id, options.direction);
-  const mappings = getFieldMappings(connection.id);
+  const syncLog = await createSyncLog(connection.id, options.direction);
+  const mappings = await getFieldMappings(connection.id);
   const connLabel = connection.name || connection.id;
 
   logger.info('Sync started', { name: connLabel, direction: options.direction, dryRun: options.dryRun ?? false });
 
   if (mappings.length === 0) {
     logger.warn('No field mappings configured — sync aborted', { name: connLabel });
-    updateSyncLog(syncLog.id, {
+    await updateSyncLog(syncLog.id, {
       status: 'failed',
       errors: [{ record_id: '', message: 'No field mappings configured for this connection' }],
     });
@@ -103,7 +153,7 @@ export async function runSync(connection: Connection, options: SyncOptions): Pro
       logger.warn('Record error', { record: e.record_id, message: e.message });
     }
 
-    updateSyncLog(syncLog.id, {
+    await updateSyncLog(syncLog.id, {
       status,
       records_processed: results.length - skipped,
       records_created: created,
@@ -113,13 +163,13 @@ export async function runSync(connection: Connection, options: SyncOptions): Pro
       errors,
     });
 
-    updateConnection(connection.id, { last_synced_at: new Date().toISOString() });
+    await updateConnection(connection.id, { last_synced_at: new Date().toISOString() });
 
     return syncLog;
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     logger.error('Sync threw an unhandled error', err instanceof Error ? err : new Error(message));
-    updateSyncLog(syncLog.id, {
+    await updateSyncLog(syncLog.id, {
       status: 'failed',
       errors: [{ record_id: '', message: `Sync failed: ${message}` }],
     });
@@ -160,7 +210,7 @@ async function syncAirtableToWebflow(
     : atRecords;
 
   const results: SyncRecordResult[] = [];
-  const existingMappings = getAllRecordMappings(connection.id);
+  const existingMappings = await getAllRecordMappings(connection.id);
   const processedAirtableIds = new Set<string>();
   const metadataUpdates: { id: string; fields: Record<string, unknown> }[] = [];
   // Webflow item IDs that need live publishing after all records are processed
@@ -181,7 +231,7 @@ async function syncAirtableToWebflow(
     // ── Delta sync: skip records that haven't changed since last sync ──
     if (connection.last_modified_field && !options.recordIds) {
       const lastModified = record.fields[connection.last_modified_field] as string | undefined;
-      const existingMap = getRecordMapping(connection.id, record.id);
+      const existingMap = await getRecordMapping(connection.id, record.id);
 
       if (!lastModified) {
         logger.debug('Delta check: no lastModified value — will process record normally', { id: record.id, last_modified_field: connection.last_modified_field });
@@ -378,7 +428,7 @@ async function syncAirtableToWebflow(
   // last_synced_at always covers the write-back itself.
   if (!options.dryRun) {
     for (const m of syncedMappings) {
-      upsertRecordMapping(connection.id, m.airtableId, m.webflowId);
+      await upsertRecordMapping(connection.id, m.airtableId, m.webflowId);
     }
     logger.info(`Re-stamped last_synced_at for ${syncedMappings.length} record(s) after write-back`, {
       airtable_ids: syncedMappings.map(m => m.airtableId),
@@ -408,7 +458,7 @@ async function syncOneRecordToWebflow(
 
     // Handle delete before building field data
     if (action === 'delete') {
-      const existingMap = getRecordMapping(connection.id, record.id);
+      const existingMap = await getRecordMapping(connection.id, record.id);
       if (existingMap) {
         return deleteWebflowItem(connection, record.id, existingMap.webflow_item_id, options);
       }
@@ -433,11 +483,7 @@ async function syncOneRecordToWebflow(
 
         let linkedConnId = mapping.linked_connection_id;
         if (!linkedConnId) {
-          // Auto-detect: find which sibling connection owns these Airtable record IDs
-          for (const conn of listConnections()) {
-            if (conn.id === connection.id) continue;
-            if (getRecordMapping(conn.id, atRecordIds[0])) { linkedConnId = conn.id; break; }
-          }
+          linkedConnId = await findLinkedConnectionByAirtableRecord(connection.id, atRecordIds[0]);
           if (linkedConnId) {
             logger.debug(`Auto-detected linked connection for reference field "${mapping.airtable_field_name}"`, { linkedConnId });
           }
@@ -447,9 +493,7 @@ async function syncOneRecordToWebflow(
           continue; // no match found — skip to avoid invalid IDs
         }
 
-        const wfIds = atRecordIds
-          .map(atId => getRecordMapping(linkedConnId!, atId)?.webflow_item_id)
-          .filter((id): id is string => Boolean(id));
+        const wfIds = await getMappedWebflowItemIds(linkedConnId, atRecordIds);
 
         converted = mapping.webflow_field_type === 'Reference' ? (wfIds[0] ?? null) : wfIds;
       } else {
@@ -480,7 +524,7 @@ async function syncOneRecordToWebflow(
     const isArchived = action === 'archive';
 
     if (options.dryRun) {
-      const existing = getRecordMapping(connection.id, record.id);
+      const existing = await getRecordMapping(connection.id, record.id);
       return {
         source_id: record.id,
         target_id: existing?.webflow_item_id,
@@ -489,7 +533,7 @@ async function syncOneRecordToWebflow(
     }
 
     // Check if record already exists in Webflow
-    const existingMap = getRecordMapping(connection.id, record.id);
+    const existingMap = await getRecordMapping(connection.id, record.id);
 
     if (existingMap) {
       // Update existing item
@@ -499,7 +543,7 @@ async function syncOneRecordToWebflow(
         fieldData,
         { isDraft, isArchived }
       );
-      upsertRecordMapping(connection.id, record.id, updated.id);
+      await upsertRecordMapping(connection.id, record.id, updated.id);
       logger.debug('Updated Webflow item', { airtableId: record.id, webflowId: updated.id, action });
       if (action === 'publish') publishIds.push(updated.id);
       return { source_id: record.id, target_id: updated.id, action: 'updated' };
@@ -510,7 +554,7 @@ async function syncOneRecordToWebflow(
         fieldData,
         { isDraft, isArchived }
       );
-      upsertRecordMapping(connection.id, record.id, created.id);
+      await upsertRecordMapping(connection.id, record.id, created.id);
       logger.debug('Created Webflow item', { airtableId: record.id, webflowId: created.id, action });
       if (action === 'publish') publishIds.push(created.id);
       return { source_id: record.id, target_id: created.id, action: 'created' };
@@ -531,7 +575,7 @@ async function deleteWebflowItem(
   try {
     if (!options.dryRun) {
       await webflow.deleteItem(connection.webflow_collection_id, webflowId);
-      deleteRecordMapping(connection.id, airtableId);
+      await deleteRecordMapping(connection.id, airtableId);
     }
     logger.debug('Deleted Webflow item', { airtableId, webflowId });
     return { source_id: airtableId, target_id: webflowId, action: 'deleted' };
@@ -567,7 +611,7 @@ async function syncWebflowToAirtable(
     : wfItems;
 
   const results: SyncRecordResult[] = [];
-  const existingMappings = getAllRecordMappings(connection.id);
+  const existingMappings = await getAllRecordMappings(connection.id);
   const processedWebflowIds = new Set<string>();
 
   for (const item of itemsToSync) {
@@ -575,7 +619,7 @@ async function syncWebflowToAirtable(
 
     // ── Delta sync: skip items not updated since last sync ──────────
     if (!options.recordIds) {
-      const existingMap = getRecordMapping(connection.id, undefined, item.id);
+      const existingMap = await getRecordMapping(connection.id, undefined, item.id);
       if (existingMap && item.lastUpdated) {
         const updatedAt = new Date(item.lastUpdated).getTime();
         const syncedAt = new Date(existingMap.last_synced_at).getTime();
@@ -665,7 +709,7 @@ async function processActionCommands(
     // were never populated (e.g. the fields were added to the connection
     // after the initial sync, or the first write-back failed).
     if (!hasPendingCommand && wfItemsMap) {
-      const existingMap = getRecordMapping(connection.id, record.id);
+      const existingMap = await getRecordMapping(connection.id, record.id);
       if (existingMap) {
         const wfItem = wfItemsMap.get(existingMap.webflow_item_id);
         if (wfItem) {
@@ -699,7 +743,7 @@ async function processActionCommands(
     if (!hasPendingCommand) continue; // no wfItemsMap and no command
 
     const action = actionRaw.toLowerCase().trim();
-    const existingMap = getRecordMapping(connection.id, record.id);
+    const existingMap = await getRecordMapping(connection.id, record.id);
     if (!existingMap) {
       logger.debug('Action command on unmapped record — skipping', { id: record.id, action });
       continue;
@@ -712,7 +756,7 @@ async function processActionCommands(
 
       if (action === 'delete') {
         await webflow.deleteItem(connection.webflow_collection_id, existingMap.webflow_item_id);
-        deleteRecordMapping(connection.id, record.id);
+        await deleteRecordMapping(connection.id, record.id);
         label = 'deleted';
       } else {
         const isDraft    = action === 'draft';
@@ -806,7 +850,7 @@ async function processActionCommands(
 
   // ── Re-stamp last_synced_at so the write-back doesn't trigger re-sync ──
   for (const m of syncedMappings) {
-    upsertRecordMapping(connection.id, m.airtableId, m.webflowId);
+    await upsertRecordMapping(connection.id, m.airtableId, m.webflowId);
   }
   if (syncedMappings.length > 0) {
     logger.debug(`Re-stamped last_synced_at for ${syncedMappings.length} record(s) after action processing`);
@@ -848,11 +892,7 @@ async function syncOneRecordToAirtable(
 
         let linkedConnId = mapping.linked_connection_id;
         if (!linkedConnId) {
-          // Auto-detect: find which sibling connection owns these Webflow item IDs
-          for (const conn of listConnections()) {
-            if (conn.id === connection.id) continue;
-            if (getRecordMapping(conn.id, undefined, wfItemIds[0])) { linkedConnId = conn.id; break; }
-          }
+          linkedConnId = await findLinkedConnectionByWebflowItem(connection.id, wfItemIds[0]);
           if (linkedConnId) {
             logger.debug(`Auto-detected linked connection for reference field "${mapping.airtable_field_name}"`, { linkedConnId });
           }
@@ -864,9 +904,7 @@ async function syncOneRecordToAirtable(
 
         // Airtable's write API expects plain record ID strings for multipleRecordLinks.
         // (The object format { id: 'recXXX' } is what Airtable returns on read — not what it accepts on write.)
-        const atIds = wfItemIds
-          .map(wfId => getRecordMapping(linkedConnId!, undefined, wfId)?.airtable_record_id)
-          .filter((id): id is string => Boolean(id));
+        const atIds = await getMappedAirtableRecordIds(linkedConnId, wfItemIds);
 
         converted = atIds; // ["recXXX", "recYYY"] — plain string array
       } else {
@@ -877,7 +915,7 @@ async function syncOneRecordToAirtable(
     }
 
     // ── Resolve create vs update early so we can build all metadata at once ──
-    const existingMap = getRecordMapping(connection.id, undefined, item.id);
+    const existingMap = await getRecordMapping(connection.id, undefined, item.id);
     const recordAction = existingMap ? 'updated' : 'created';
 
     // ── Metadata fields: embed Webflow item ID + sync time + action directly ──
@@ -938,7 +976,7 @@ async function syncOneRecordToAirtable(
         [{ id: existingMap.airtable_record_id, fields }]
       );
       airtableRecordId = updated[0].id;
-      upsertRecordMapping(connection.id, airtableRecordId, item.id);
+      await upsertRecordMapping(connection.id, airtableRecordId, item.id);
       logger.debug('Updated Airtable record', { webflowId: item.id, airtableId: airtableRecordId });
     } else {
       // Create new Airtable record
@@ -948,7 +986,7 @@ async function syncOneRecordToAirtable(
         [{ fields }]
       );
       airtableRecordId = created[0].id;
-      upsertRecordMapping(connection.id, airtableRecordId, item.id);
+      await upsertRecordMapping(connection.id, airtableRecordId, item.id);
       logger.debug('Created Airtable record', { webflowId: item.id, airtableId: airtableRecordId });
     }
 
@@ -1004,7 +1042,7 @@ async function deleteAirtableRecord(
   try {
     if (!options.dryRun) {
       await airtable.deleteRecords(connection.airtable_base_id, connection.airtable_table_id, [airtableId]);
-      deleteRecordMapping(connection.id, undefined, webflowId);
+      await deleteRecordMapping(connection.id, undefined, webflowId);
     }
     logger.debug('Deleted Airtable record', { webflowId, airtableId });
     return { source_id: webflowId, target_id: airtableId, action: 'deleted' };

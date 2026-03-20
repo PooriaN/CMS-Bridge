@@ -9,7 +9,7 @@ const runningSyncs = new Set<string>();
 
 router.post('/:connectionId', async (req, res) => {
   const connectionId = req.params.connectionId as string;
-  const connection = getConnection(connectionId);
+  const connection = await getConnection(connectionId);
   if (!connection) {
     res.status(404).json({ error: 'Connection not found' });
     return;
@@ -38,7 +38,7 @@ router.post('/:connectionId', async (req, res) => {
 
   try {
     const log = await runSync(connection, { direction, dryRun, recordIds });
-    const result = getSyncLog(log.id);
+    const result = await getSyncLog(log.id);
     res.json({ sync: result });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
@@ -48,9 +48,9 @@ router.post('/:connectionId', async (req, res) => {
   }
 });
 
-router.get('/status/:logId', (req, res) => {
+router.get('/status/:logId', async (req, res) => {
   const logId = req.params.logId as string;
-  const log = getSyncLog(logId);
+  const log = await getSyncLog(logId);
   if (!log) {
     res.status(404).json({ error: 'Sync log not found' });
     return;
