@@ -1,4 +1,4 @@
-import { NextResponse } from 'next/server';
+import { next, rewrite } from '@vercel/functions';
 
 const SESSION_COOKIE_NAME = 'cmsb_session';
 const SESSION_VERSION = 'v1';
@@ -55,60 +55,66 @@ async function hasValidSession(token, secret) {
 }
 
 export async function middleware(request) {
-  const { pathname, search } = request.nextUrl;
+  const url = new URL(request.url);
+  const { pathname, search } = url;
   const loginPath = pathname === '/login' || pathname === '/login.html';
   const publicPath = pathname === '/api/health' || pathname === '/api/login' || pathname === '/api/logout';
   const isApi = pathname.startsWith('/api/');
 
   if (!isAuthConfigured()) {
     if (!isProductionLike() || pathname === '/api/health') {
-      return NextResponse.next();
+      return next();
     }
 
     if (isApi) {
-      return NextResponse.json({ error: 'Authentication is not configured' }, { status: 503 });
+      return Response.json({ error: 'Authentication is not configured' }, { status: 503 });
     }
 
-    return new NextResponse(
+    return new Response(
       '<!DOCTYPE html><html><head><meta charset="utf-8"><title>Authentication Unavailable</title></head><body style="font-family:system-ui,sans-serif;background:#0a0a0f;color:#e4e4ef;display:grid;place-items:center;min-height:100vh;margin:0"><main style="max-width:420px;padding:32px;border:1px solid #2a2a3a;border-radius:12px;background:#13131a"><h1 style="margin-top:0">Authentication unavailable</h1><p style="color:#a5a5bd;line-height:1.5">This deployment is missing APP_PASSWORD or APP_SESSION_SECRET, so access is blocked until authentication is configured.</p></main></body></html>',
       { status: 503, headers: { 'content-type': 'text/html; charset=utf-8' } }
     );
   }
 
-  if (publicPath) {
-    return NextResponse.next();
-  }
-
-  const token = request.cookies.get(SESSION_COOKIE_NAME)?.value;
-  const authenticated = await hasValidSession(token, getSessionSecret());
-
   if (pathname === '/logout') {
-    return NextResponse.rewrite(new URL('/api/logout', request.url));
+    return rewrite(new URL('/api/logout', request.url));
   }
+
+  if (publicPath) {
+    return next();
+  }
+
+  const cookieHeader = request.headers.get('cookie') || '';
+  const token = cookieHeader
+    .split(';')
+    .map(part => part.trim())
+    .find(part => part.startsWith(`${SESSION_COOKIE_NAME}=`))
+    ?.slice(SESSION_COOKIE_NAME.length + 1);
+  const authenticated = await hasValidSession(token, getSessionSecret());
 
   if (loginPath) {
     if (authenticated) {
-      return NextResponse.redirect(new URL('/', request.url));
+      return Response.redirect(new URL('/', request.url));
     }
     if (pathname === '/login') {
-      return NextResponse.rewrite(new URL(`/login.html${search}`, request.url));
+      return rewrite(new URL(`/login.html${search}`, request.url));
     }
-    return NextResponse.next();
+    return next();
   }
 
   if (authenticated) {
-    return NextResponse.next();
+    return next();
   }
 
   if (isApi) {
-    return NextResponse.json({ error: 'Authentication required' }, { status: 401 });
+    return Response.json({ error: 'Authentication required' }, { status: 401 });
   }
 
   const loginUrl = new URL('/login', request.url);
   if (pathname && pathname !== '/') {
     loginUrl.searchParams.set('next', `${pathname}${search}`);
   }
-  return NextResponse.redirect(loginUrl);
+  return Response.redirect(loginUrl);
 }
 
 export const config = {
