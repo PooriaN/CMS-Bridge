@@ -531,11 +531,6 @@ async function syncOneRecordToWebflow(
       }
     }
 
-    // Write Airtable record ID into Webflow for cross-referencing
-    if (connection.airtable_id_slug) {
-      fieldData[connection.airtable_id_slug] = record.id;
-    }
-
     // Determine Webflow item flags from action:
     //   draft   → isDraft: true  (hidden from live site, visible in editor)
     //   archive → isArchived: true
@@ -1025,41 +1020,6 @@ async function syncOneRecordToAirtable(
       airtableRecordId = created[0].id;
       await upsertRecordMapping(connection.id, airtableRecordId, item.id);
       logger.debug('Created Airtable record', { webflowId: item.id, airtableId: airtableRecordId });
-    }
-
-    // ── Write Airtable record ID back to Webflow item ─────────────
-    // Mirrors what the AT→WF path does for airtable_id_slug so the Webflow
-    // item always knows which Airtable record it corresponds to.
-    if (connection.airtable_id_slug) {
-      try {
-        await webflow.updateItem(connection.webflow_collection_id, item.id, {
-          [connection.airtable_id_slug]: airtableRecordId,
-        });
-        logger.debug('Wrote Airtable record ID back to Webflow item', {
-          webflowId: item.id,
-          airtableId: airtableRecordId,
-          slug: connection.airtable_id_slug,
-        });
-
-        // ── Also update the Airtable record if the airtable_id_slug field
-        // is mapped to an Airtable field — so it's visible in Airtable
-        // immediately rather than requiring a second sync pass.
-        const idMapping = mappings.find(m => m.webflow_field_slug === connection.airtable_id_slug);
-        if (idMapping) {
-          await airtable.updateRecords(
-            connection.airtable_base_id,
-            connection.airtable_table_id,
-            [{ id: airtableRecordId, fields: { [idMapping.airtable_field_name]: airtableRecordId } }]
-          );
-          logger.debug('Wrote Airtable record ID into mapped Airtable field', {
-            airtableField: idMapping.airtable_field_name,
-            airtableId: airtableRecordId,
-          });
-        }
-      } catch (wfErr) {
-        // Best-effort — don't fail the whole sync over a write-back
-        logger.warn('Failed to write Airtable record ID back to Webflow item', wfErr instanceof Error ? wfErr : undefined);
-      }
     }
 
     return { source_id: item.id, target_id: airtableRecordId, action: recordAction };

@@ -1026,7 +1026,7 @@
         message_field: autoSettings.message_field,
         sync_time_field: autoSettings.sync_time_field,
         webflow_id_field: autoSettings.webflow_id_field,
-        airtable_id_slug: autoSettings.airtable_id_slug,
+        airtable_id_slug: null,
         last_modified_field: autoSettings.last_modified_field,
         cron_schedule: document.getElementById('conn-cron').value || undefined,
         is_active: true,
@@ -1156,7 +1156,6 @@
       'conn-sync-time-field':    { name: 'CMS-B: Sync Time',   type: 'singleLineText', isWebflow: false },
       'conn-webflow-id-field':   { name: 'Webflow ID',         type: 'singleLineText', isWebflow: false },
       'conn-last-modified-field':{ name: null, /* API doesn't support creating lastModifiedTime */ type: 'lastModifiedTime', isWebflow: false },
-      'conn-airtable-id-slug':   { name: 'Record ID',          type: 'PlainText',      isWebflow: true  },
       'conn-action-field':       { name: 'CMS-B: Action',      type: 'singleSelect',   isWebflow: false,
                                    options: { choices: ACTION_CHOICES.map(n => ({ name: n })) } },
     };
@@ -1165,7 +1164,6 @@
       sync_time_field: 'conn-sync-time-field',
       webflow_id_field: 'conn-webflow-id-field',
       last_modified_field: 'conn-last-modified-field',
-      airtable_id_slug: 'conn-airtable-id-slug',
       action_field: 'conn-action-field',
     };
 
@@ -1182,11 +1180,6 @@
       return airtableTables.find(t => t.id === tableId) || null;
     }
 
-    function getCurrentWebflowCollection() {
-      const collectionId = document.getElementById('conn-collection').value;
-      return webflowCollections.find(c => c.id === collectionId) || null;
-    }
-
     function findAirtableFieldByName(fields, name) {
       return fields.find(f => normalize(f.name) === normalize(name)) || null;
     }
@@ -1197,11 +1190,6 @@
 
     function buildAutomaticConnectionSettings() {
       const airtableFields = getCurrentAirtableTable()?.fields || [];
-      const webflowFields = getCurrentWebflowCollection()?.fields?.filter(f => f.isEditable) || [];
-      const recordIdField = findWebflowFieldBySlugOrName(webflowFields, 'record-id')
-        || findWebflowFieldBySlugOrName(webflowFields, META_FIELD_DEFAULTS['conn-airtable-id-slug'].name)
-        || findWebflowFieldBySlugOrName(webflowFields, 'Airtable Record ID')
-        || findWebflowFieldBySlugOrName(webflowFields, 'airtable-record-id');
 
       return {
         message_field: findAirtableFieldByName(airtableFields, META_FIELD_DEFAULTS['conn-message-field'].name)?.name
@@ -1213,7 +1201,6 @@
         action_field: findAirtableFieldByName(airtableFields, META_FIELD_DEFAULTS['conn-action-field'].name)?.name
           || META_FIELD_DEFAULTS['conn-action-field'].name,
         last_modified_field: airtableFields.find(f => f.type === 'lastModifiedTime')?.name,
-        airtable_id_slug: recordIdField?.slug,
       };
     }
 
@@ -1232,48 +1219,21 @@
       return data.field;
     }
 
-    async function createWebflowMetadataField(config) {
-      const res = await fetch(`${API}/discover/webflow/collections/${currentMappingConnection.webflow_collection_id}/fields`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ displayName: config.name, type: config.type }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Failed to create Webflow metadata field');
-      cachedWebflowFields.push(data.field);
-      return data.field;
-    }
-
     async function ensureConnectionMetadata() {
-      const payload = {};
+      const payload = { airtable_id_slug: null };
       const createdLabels = [];
 
       for (const [connectionKey, selectId] of Object.entries(AUTO_METADATA_KEYS)) {
         const config = META_FIELD_DEFAULTS[selectId];
         if (config.type === 'lastModifiedTime') continue;
 
-        if (config.isWebflow) {
-          const existing = currentMappingConnection?.[connectionKey]
-            ? findWebflowFieldBySlugOrName(cachedWebflowFields, currentMappingConnection[connectionKey])
-            : null;
-          const found = existing
-            || (connectionKey === 'airtable_id_slug' ? findWebflowFieldBySlugOrName(cachedWebflowFields, 'record-id') : null)
-            || findWebflowFieldBySlugOrName(cachedWebflowFields, config.name)
-            || findWebflowFieldBySlugOrName(cachedWebflowFields, slugify(config.name))
-            || (connectionKey === 'airtable_id_slug' ? findWebflowFieldBySlugOrName(cachedWebflowFields, 'Airtable Record ID') : null)
-            || (connectionKey === 'airtable_id_slug' ? findWebflowFieldBySlugOrName(cachedWebflowFields, 'airtable-record-id') : null);
-          const field = found || await createWebflowMetadataField(config);
-          if (!found) createdLabels.push(config.name);
-          payload[connectionKey] = field.slug;
-        } else {
-          const existing = currentMappingConnection?.[connectionKey]
-            ? findAirtableFieldByName(cachedAirtableFields, currentMappingConnection[connectionKey])
-            : null;
-          const found = existing || findAirtableFieldByName(cachedAirtableFields, config.name);
-          const field = found || await createAirtableMetadataField(config);
-          if (!found) createdLabels.push(config.name);
-          payload[connectionKey] = field.name;
-        }
+        const existing = currentMappingConnection?.[connectionKey]
+          ? findAirtableFieldByName(cachedAirtableFields, currentMappingConnection[connectionKey])
+          : null;
+        const found = existing || findAirtableFieldByName(cachedAirtableFields, config.name);
+        const field = found || await createAirtableMetadataField(config);
+        if (!found) createdLabels.push(config.name);
+        payload[connectionKey] = field.name;
       }
 
       const lastModifiedField = (
@@ -1479,22 +1439,37 @@
       return (str || '').toLowerCase().replace(/[^a-z0-9]/g, '');
     }
 
-    function findMatchingAirtableField(wfField) {
+    function getReferenceCollectionId(wfField) {
+      const validations = wfField?.validations || {};
+      return validations.collectionId
+        || validations.collection_id
+        || (Array.isArray(validations.collectionIds) ? validations.collectionIds[0] : '')
+        || '';
+    }
+
+    function findMatchingAirtableField(wfField, autoLinkedConn = null) {
       const wfNorm = normalize(wfField.displayName);
       const wfSlugNorm = normalize(wfField.slug);
+      const isRefType = wfField.type === 'Reference' || wfField.type === 'MultiReference';
+      const candidates = cachedAirtableFields.filter(f => {
+        if (!isRefType) return true;
+        if (f.type !== 'multipleRecordLinks') return false;
+        const linkedTableId = f.options?.linkedTableId;
+        return !autoLinkedConn?.airtable_table_id || !linkedTableId || linkedTableId === autoLinkedConn.airtable_table_id;
+      });
 
       // 1. Exact normalized name match
-      let match = cachedAirtableFields.find(f => normalize(f.name) === wfNorm);
+      let match = candidates.find(f => normalize(f.name) === wfNorm);
       if (match) return match;
 
       // 2. Slug match (e.g. "blog-title" → "Blog Title")
-      match = cachedAirtableFields.find(f => normalize(f.name) === wfSlugNorm);
+      match = candidates.find(f => normalize(f.name) === wfSlugNorm);
       if (match) return match;
 
       // 3. Substring containment — only if the shorter string is at least 75% the
       //    length of the longer one, preventing "client" (6) matching
       //    "showclientonthisblogpost" (24).
-      match = cachedAirtableFields.find(f => {
+      match = candidates.find(f => {
         const atNorm = normalize(f.name);
         if (atNorm.length < 4 || wfNorm.length < 4) return false;
         const shorter = Math.min(atNorm.length, wfNorm.length);
@@ -1516,15 +1491,13 @@
       const usedAtIds = new Set();
 
       for (const wf of editableWf) {
-        const atMatch = findMatchingAirtableField(wf);
-
         // For Reference/MultiReference fields, auto-detect the linked connection
-        // using validations.collectionId — the Webflow collection this field points to.
         const isRefType = wf.type === 'Reference' || wf.type === 'MultiReference';
-        const refCollectionId = isRefType ? (wf.validations?.collectionId || '') : '';
+        const refCollectionId = isRefType ? getReferenceCollectionId(wf) : '';
         const autoLinkedConn = refCollectionId
           ? cachedConnections.find(c => c.webflow_collection_id === refCollectionId)
-          : null;
+          : cachedConnections.find(c => normalize(c.name) === normalize(wf.displayName));
+        const atMatch = findMatchingAirtableField(wf, autoLinkedConn);
 
         if (atMatch && !usedAtIds.has(atMatch.id)) {
           // Matched — render a normal row pre-selected
