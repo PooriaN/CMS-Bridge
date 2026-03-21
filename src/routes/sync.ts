@@ -34,11 +34,12 @@ router.post('/:connectionId', async (req, res) => {
     }
 
     const dryRun = req.body.dryRun === true;
+    const force = req.body.force === true;
     const recordIds = req.body.recordIds as string[] | undefined;
 
     runningSyncs.add(connection.id);
     activeConnectionId = connection.id;
-    const log = await runSync(connection, { direction, dryRun, recordIds });
+    const log = await runSync(connection, { direction, dryRun, recordIds, force });
     const result = await getSyncLog(log.id);
     res.json({ sync: result });
   } catch (err) {

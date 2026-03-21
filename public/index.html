@@ -147,6 +147,8 @@
     .card-actions {
       display: flex;
       gap: 8px;
+      flex-wrap: wrap;
+      justify-content: flex-end;
     }
 
     .card-actions button {
@@ -941,7 +943,9 @@
             </div>
             <div class="card-actions">
               <button class="success" onclick="triggerSync('${c.id}', 'airtable_to_webflow', this)">↑ Sync to Webflow</button>
+              <button class="secondary" onclick="triggerSync('${c.id}', 'airtable_to_webflow', this, { force: true })">↑ Force Re-sync</button>
               <button class="success" onclick="triggerSync('${c.id}', 'webflow_to_airtable', this)">↓ Sync from Webflow</button>
+              <button class="secondary" onclick="triggerSync('${c.id}', 'webflow_to_airtable', this, { force: true })">↓ Force Re-sync</button>
               <button class="secondary" onclick="openMappingModal('${c.id}')">Mappings</button>
               <button class="secondary" onclick="openLogsModal('${c.id}')">Logs</button>
               <button class="secondary" onclick="editConnection('${c.id}')">Edit</button>
@@ -1904,7 +1908,7 @@
 
     // ─── Sync ────────────────────────────────────────────────────
 
-    async function triggerSync(connectionId, direction, btn) {
+    async function triggerSync(connectionId, direction, btn, options = {}) {
       const originalLabel = btn.innerHTML;
       btn.disabled = true;
       btn.innerHTML = '<span class="loading"></span>Syncing...';
@@ -1913,7 +1917,7 @@
         const res = await fetch(`${API}/sync/${connectionId}`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ direction })
+          body: JSON.stringify({ direction, force: options.force === true })
         });
         const data = await res.json();
 
@@ -1922,7 +1926,8 @@
         const s = data.sync;
         const errors = s.errors || [];
         const totalFetched = s.records_processed + (s.records_skipped || 0);
-        let msg = `Sync ${s.status}: +${s.records_created} created, ~${s.records_updated} updated, −${s.records_deleted} deleted`;
+        const syncLabel = options.force ? 'Force re-sync' : 'Sync';
+        let msg = `${syncLabel} ${s.status}: +${s.records_created} created, ~${s.records_updated} updated, −${s.records_deleted} deleted`;
         if (totalFetched > s.records_processed && s.records_processed >= 0) {
           msg += ` (${totalFetched - s.records_processed} unchanged, skipped)`;
         }

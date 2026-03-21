@@ -22,6 +22,8 @@ export interface SyncOptions {
   dryRun?: boolean;
   /** Only sync records with these source IDs */
   recordIds?: string[];
+  /** Re-process all mapped records even if delta-sync metadata says they are unchanged */
+  force?: boolean;
 }
 
 // ─── Reference ID Extraction Helpers ───────────────────────────
@@ -117,7 +119,12 @@ export async function runSync(connection: Connection, options: SyncOptions): Pro
   const mappings = await getFieldMappings(connection.id);
   const connLabel = connection.name || connection.id;
 
-  logger.info('Sync started', { name: connLabel, direction: options.direction, dryRun: options.dryRun ?? false });
+  logger.info('Sync started', {
+    name: connLabel,
+    direction: options.direction,
+    dryRun: options.dryRun ?? false,
+    force: options.force ?? false,
+  });
 
   if (mappings.length === 0) {
     logger.warn('No field mappings configured — sync aborted', { name: connLabel });
@@ -229,7 +236,7 @@ async function syncAirtableToWebflow(
     processedAirtableIds.add(record.id);
 
     // ── Delta sync: skip records that haven't changed since last sync ──
-    if (connection.last_modified_field && !options.recordIds) {
+    if (connection.last_modified_field && !options.recordIds && !options.force) {
       const lastModified = record.fields[connection.last_modified_field] as string | undefined;
       const existingMap = await getRecordMapping(connection.id, record.id);
 
@@ -494,8 +501,15 @@ async function syncOneRecordToWebflow(
         }
 
         const wfIds = await getMappedWebflowItemIds(linkedConnId, atRecordIds);
+        if (wfIds.length === 0) {
+          logger.warn(
+            `Reference resolution produced no mapped Webflow IDs for field "${mapping.airtable_field_name}" — skipping field to preserve existing data`,
+            { linkedConnId, atRecordIds }
+          );
+          continue;
+        }
 
-        converted = mapping.webflow_field_type === 'Reference' ? (wfIds[0] ?? null) : wfIds;
+        converted = mapping.webflow_field_type === 'Reference' ? wfIds[0] : wfIds;
       } else {
         converted = convertAirtableToWebflow(rawValue, mapping);
       }
@@ -618,7 +632,7 @@ async function syncWebflowToAirtable(
     processedWebflowIds.add(item.id);
 
     // ── Delta sync: skip items not updated since last sync ──────────
-    if (!options.recordIds) {
+    if (!options.recordIds && !options.force) {
       const existingMap = await getRecordMapping(connection.id, undefined, item.id);
       if (existingMap && item.lastUpdated) {
         const updatedAt = new Date(item.lastUpdated).getTime();
@@ -905,6 +919,13 @@ async function syncOneRecordToAirtable(
         // Airtable's write API expects plain record ID strings for multipleRecordLinks.
         // (The object format { id: 'recXXX' } is what Airtable returns on read — not what it accepts on write.)
         const atIds = await getMappedAirtableRecordIds(linkedConnId, wfItemIds);
+        if (atIds.length === 0) {
+          logger.warn(
+            `Reference resolution produced no mapped Airtable IDs for field "${mapping.airtable_field_name}" — skipping field to preserve existing data`,
+            { linkedConnId, wfItemIds }
+          );
+          continue;
+        }
 
         converted = atIds; // ["recXXX", "recYYY"] — plain string array
       } else {
