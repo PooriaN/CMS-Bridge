@@ -7,8 +7,11 @@ const log = createLogger('airtable');
 const META_API_BASE = 'https://api.airtable.com/v0/meta';
 
 function getApiKey(): string {
-  const key = process.env.AIRTABLE_API_KEY;
-  if (!key) throw new Error('AIRTABLE_API_KEY is not set');
+  const rawKey = process.env.AIRTABLE_API_KEY;
+  if (!rawKey) throw new Error('AIRTABLE_API_KEY is not set');
+
+  const key = rawKey.trim().replace(/^Bearer\s+/i, '');
+  if (!key) throw new Error('AIRTABLE_API_KEY is empty');
   return key;
 }
 

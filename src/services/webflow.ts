@@ -5,8 +5,11 @@ const log = createLogger('webflow');
 const API_BASE = 'https://api.webflow.com/v2';
 
 function getToken(): string {
-  const token = process.env.WEBFLOW_API_TOKEN;
-  if (!token) throw new Error('WEBFLOW_API_TOKEN is not set');
+  const rawToken = process.env.WEBFLOW_API_TOKEN;
+  if (!rawToken) throw new Error('WEBFLOW_API_TOKEN is not set');
+
+  const token = rawToken.trim().replace(/^Bearer\s+/i, '');
+  if (!token) throw new Error('WEBFLOW_API_TOKEN is empty');
   return token;
 }
 
