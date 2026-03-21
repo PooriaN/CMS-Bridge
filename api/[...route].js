@@ -1,7 +1,7 @@
 const { createServer } = require('../dist/server');
 const { initializeDatabase } = require('../dist/config/database');
 
-const app = createServer({ includeStatic: false });
+const app = createServer({ includeStatic: true });
 let initPromise;
 
 function ensureInitialized() {

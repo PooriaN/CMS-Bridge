@@ -24,6 +24,9 @@ const httpLog = createLogger('http');
 export function createServer(options?: { includeStatic?: boolean }) {
   const includeStatic = options?.includeStatic ?? true;
   const app = express();
+  const publicDir = path.join(__dirname, '..', 'public');
+  const loginShellPath = path.join(publicDir, 'login.html');
+  const appShellPath = path.join(__dirname, '..', 'templates', 'app.html');
 
   app.use(cors());
   app.use(express.json());
@@ -118,7 +121,7 @@ export function createServer(options?: { includeStatic?: boolean }) {
 
   if (includeStatic) {
     app.get('/login', (_req, res) => {
-      res.sendFile(path.join(__dirname, '..', 'public', 'login.html'));
+      res.sendFile(loginShellPath);
     });
 
     app.get('/logout', (_req, res) => {
@@ -128,7 +131,7 @@ export function createServer(options?: { includeStatic?: boolean }) {
   }
 
   if (includeStatic) {
-    app.use(express.static(path.join(__dirname, '..', 'public')));
+    app.use(express.static(publicDir));
   }
 
   // API routes
@@ -143,7 +146,7 @@ export function createServer(options?: { includeStatic?: boolean }) {
 
   if (includeStatic) {
     app.get('*', (_req, res) => {
-      res.sendFile(path.join(__dirname, '..', 'public', 'index.html'));
+      res.sendFile(appShellPath);
     });
   }
 

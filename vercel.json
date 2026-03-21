@@ -6,11 +6,24 @@
     {
       "source": "/api/:path*",
       "destination": "/api/[...route]"
+    },
+    {
+      "source": "/",
+      "destination": "/api/[...route]"
+    },
+    {
+      "source": "/login",
+      "destination": "/api/[...route]"
+    },
+    {
+      "source": "/logout",
+      "destination": "/api/[...route]"
     }
   ],
   "functions": {
     "api/[...route].js": {
-      "maxDuration": 300
+      "maxDuration": 300,
+      "includeFiles": "{public/**,templates/**}"
     }
   }
 }
