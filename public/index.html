@@ -1156,7 +1156,7 @@
       'conn-sync-time-field':    { name: 'CMS-B: Sync Time',   type: 'singleLineText', isWebflow: false },
       'conn-webflow-id-field':   { name: 'Webflow ID',         type: 'singleLineText', isWebflow: false },
       'conn-last-modified-field':{ name: null, /* API doesn't support creating lastModifiedTime */ type: 'lastModifiedTime', isWebflow: false },
-      'conn-airtable-id-slug':   { name: 'Airtable Record ID', type: 'PlainText',      isWebflow: true  },
+      'conn-airtable-id-slug':   { name: 'Record ID',          type: 'PlainText',      isWebflow: true  },
       'conn-action-field':       { name: 'CMS-B: Action',      type: 'singleSelect',   isWebflow: false,
                                    options: { choices: ACTION_CHOICES.map(n => ({ name: n })) } },
     };
@@ -1198,6 +1198,10 @@
     function buildAutomaticConnectionSettings() {
       const airtableFields = getCurrentAirtableTable()?.fields || [];
       const webflowFields = getCurrentWebflowCollection()?.fields?.filter(f => f.isEditable) || [];
+      const recordIdField = findWebflowFieldBySlugOrName(webflowFields, 'record-id')
+        || findWebflowFieldBySlugOrName(webflowFields, META_FIELD_DEFAULTS['conn-airtable-id-slug'].name)
+        || findWebflowFieldBySlugOrName(webflowFields, 'Airtable Record ID')
+        || findWebflowFieldBySlugOrName(webflowFields, 'airtable-record-id');
 
       return {
         message_field: findAirtableFieldByName(airtableFields, META_FIELD_DEFAULTS['conn-message-field'].name)?.name
@@ -1209,10 +1213,7 @@
         action_field: findAirtableFieldByName(airtableFields, META_FIELD_DEFAULTS['conn-action-field'].name)?.name
           || META_FIELD_DEFAULTS['conn-action-field'].name,
         last_modified_field: airtableFields.find(f => f.type === 'lastModifiedTime')?.name,
-        airtable_id_slug: (
-          findWebflowFieldBySlugOrName(webflowFields, META_FIELD_DEFAULTS['conn-airtable-id-slug'].name)
-          || findWebflowFieldBySlugOrName(webflowFields, slugify(META_FIELD_DEFAULTS['conn-airtable-id-slug'].name))
-        )?.slug,
+        airtable_id_slug: recordIdField?.slug,
       };
     }
 
@@ -1256,8 +1257,11 @@
             ? findWebflowFieldBySlugOrName(cachedWebflowFields, currentMappingConnection[connectionKey])
             : null;
           const found = existing
+            || (connectionKey === 'airtable_id_slug' ? findWebflowFieldBySlugOrName(cachedWebflowFields, 'record-id') : null)
             || findWebflowFieldBySlugOrName(cachedWebflowFields, config.name)
-            || findWebflowFieldBySlugOrName(cachedWebflowFields, slugify(config.name));
+            || findWebflowFieldBySlugOrName(cachedWebflowFields, slugify(config.name))
+            || (connectionKey === 'airtable_id_slug' ? findWebflowFieldBySlugOrName(cachedWebflowFields, 'Airtable Record ID') : null)
+            || (connectionKey === 'airtable_id_slug' ? findWebflowFieldBySlugOrName(cachedWebflowFields, 'airtable-record-id') : null);
           const field = found || await createWebflowMetadataField(config);
           if (!found) createdLabels.push(config.name);
           payload[connectionKey] = field.slug;
