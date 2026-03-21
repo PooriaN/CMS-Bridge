@@ -580,8 +580,9 @@
       margin-top: 3px;
     }
 
-    /* Required metadata section (replaces optional <details> block) */
+    /* Metadata fields are auto-managed during mapping approval. */
     .metadata-section {
+      display: none;
       margin: 16px 0;
       padding: 14px;
       border: 1px solid var(--border);
@@ -1013,34 +1014,20 @@
 
     async function saveConnection(e) {
       e.preventDefault();
-
-      // Validate required metadata fields
-      const metaRequired = {
-        'CMS-B: Message Field': document.getElementById('conn-message-field').value,
-        'CMS-B: Sync Time Field': document.getElementById('conn-sync-time-field').value,
-        'Webflow ID Field': document.getElementById('conn-webflow-id-field').value,
-        'Last Modified Field': document.getElementById('conn-last-modified-field').value,
-        'Airtable ID Slug': document.getElementById('conn-airtable-id-slug').value,
-      };
-      const missing = Object.entries(metaRequired).filter(([, v]) => !v).map(([k]) => k);
-      if (missing.length > 0) {
-        showToast(`Please select: ${missing.join(', ')}`, 'error');
-        return;
-      }
-
       const id = document.getElementById('edit-id').value;
+      const autoSettings = buildAutomaticConnectionSettings();
       const body = {
         name: document.getElementById('conn-name').value,
         airtable_base_id: document.getElementById('conn-base').value,
         airtable_table_id: document.getElementById('conn-table').value,
         webflow_site_id: document.getElementById('conn-site').value,
         webflow_collection_id: document.getElementById('conn-collection').value,
-        action_field: document.getElementById('conn-action-field').value || undefined,
-        message_field: document.getElementById('conn-message-field').value,
-        sync_time_field: document.getElementById('conn-sync-time-field').value,
-        webflow_id_field: document.getElementById('conn-webflow-id-field').value,
-        airtable_id_slug: document.getElementById('conn-airtable-id-slug').value,
-        last_modified_field: document.getElementById('conn-last-modified-field').value,
+        action_field: autoSettings.action_field,
+        message_field: autoSettings.message_field,
+        sync_time_field: autoSettings.sync_time_field,
+        webflow_id_field: autoSettings.webflow_id_field,
+        airtable_id_slug: autoSettings.airtable_id_slug,
+        last_modified_field: autoSettings.last_modified_field,
         cron_schedule: document.getElementById('conn-cron').value || undefined,
         is_active: true,
       };
@@ -1051,10 +1038,15 @@
         const res = await fetch(url, {
           method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body)
         });
-        if (!res.ok) throw new Error((await res.json()).error);
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error);
         showToast(id ? 'Connection updated' : 'Connection created', 'success');
         closeModal();
-        loadConnections();
+        await loadConnections();
+        if (!id && data.connection?.id) {
+          await openMappingModal(data.connection.id, { autoMap: true });
+          showToast('Suggested mappings are ready. Review and approve them.', 'success');
+        }
       } catch (err) {
         showToast(err.message, 'error');
       }
@@ -1092,6 +1084,11 @@
         const siteSelect = document.getElementById('conn-site');
         siteSelect.innerHTML = '<option value="">Select a site...</option>' +
           webflowSites.map(s => `<option value="${s.id}">${esc(s.displayName)}</option>`).join('');
+        siteSelect.disabled = webflowSites.length === 1;
+        if (webflowSites.length === 1) {
+          siteSelect.value = webflowSites[0].id;
+          await loadCollections();
+        }
       } catch (err) {
         showToast('Failed to load Airtable/Webflow data. Check your API keys.', 'error');
       }
@@ -1163,6 +1160,144 @@
       'conn-action-field':       { name: 'CMS-B: Action',      type: 'singleSelect',   isWebflow: false,
                                    options: { choices: ACTION_CHOICES.map(n => ({ name: n })) } },
     };
+    const AUTO_METADATA_KEYS = {
+      message_field: 'conn-message-field',
+      sync_time_field: 'conn-sync-time-field',
+      webflow_id_field: 'conn-webflow-id-field',
+      last_modified_field: 'conn-last-modified-field',
+      airtable_id_slug: 'conn-airtable-id-slug',
+      action_field: 'conn-action-field',
+    };
+
+    function slugify(value) {
+      return (value || '')
+        .toLowerCase()
+        .trim()
+        .replace(/[^a-z0-9]+/g, '-')
+        .replace(/^-+|-+$/g, '');
+    }
+
+    function getCurrentAirtableTable() {
+      const tableId = document.getElementById('conn-table').value;
+      return airtableTables.find(t => t.id === tableId) || null;
+    }
+
+    function getCurrentWebflowCollection() {
+      const collectionId = document.getElementById('conn-collection').value;
+      return webflowCollections.find(c => c.id === collectionId) || null;
+    }
+
+    function findAirtableFieldByName(fields, name) {
+      return fields.find(f => normalize(f.name) === normalize(name)) || null;
+    }
+
+    function findWebflowFieldBySlugOrName(fields, target) {
+      return fields.find(f => normalize(f.slug) === normalize(target) || normalize(f.displayName) === normalize(target)) || null;
+    }
+
+    function buildAutomaticConnectionSettings() {
+      const airtableFields = getCurrentAirtableTable()?.fields || [];
+      const webflowFields = getCurrentWebflowCollection()?.fields?.filter(f => f.isEditable) || [];
+
+      return {
+        message_field: findAirtableFieldByName(airtableFields, META_FIELD_DEFAULTS['conn-message-field'].name)?.name
+          || META_FIELD_DEFAULTS['conn-message-field'].name,
+        sync_time_field: findAirtableFieldByName(airtableFields, META_FIELD_DEFAULTS['conn-sync-time-field'].name)?.name
+          || META_FIELD_DEFAULTS['conn-sync-time-field'].name,
+        webflow_id_field: findAirtableFieldByName(airtableFields, META_FIELD_DEFAULTS['conn-webflow-id-field'].name)?.name
+          || META_FIELD_DEFAULTS['conn-webflow-id-field'].name,
+        action_field: findAirtableFieldByName(airtableFields, META_FIELD_DEFAULTS['conn-action-field'].name)?.name
+          || META_FIELD_DEFAULTS['conn-action-field'].name,
+        last_modified_field: airtableFields.find(f => f.type === 'lastModifiedTime')?.name,
+        airtable_id_slug: (
+          findWebflowFieldBySlugOrName(webflowFields, META_FIELD_DEFAULTS['conn-airtable-id-slug'].name)
+          || findWebflowFieldBySlugOrName(webflowFields, slugify(META_FIELD_DEFAULTS['conn-airtable-id-slug'].name))
+        )?.slug,
+      };
+    }
+
+    async function createAirtableMetadataField(config) {
+      const res = await fetch(
+        `${API}/discover/airtable/bases/${currentMappingConnection.airtable_base_id}/tables/${currentMappingConnection.airtable_table_id}/fields`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name: config.name, type: config.type, options: config.options }),
+        }
+      );
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Failed to create Airtable metadata field');
+      cachedAirtableFields.push(data.field);
+      return data.field;
+    }
+
+    async function createWebflowMetadataField(config) {
+      const res = await fetch(`${API}/discover/webflow/collections/${currentMappingConnection.webflow_collection_id}/fields`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ displayName: config.name, type: config.type }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Failed to create Webflow metadata field');
+      cachedWebflowFields.push(data.field);
+      return data.field;
+    }
+
+    async function ensureConnectionMetadata() {
+      const payload = {};
+      const createdLabels = [];
+
+      for (const [connectionKey, selectId] of Object.entries(AUTO_METADATA_KEYS)) {
+        const config = META_FIELD_DEFAULTS[selectId];
+        if (config.type === 'lastModifiedTime') continue;
+
+        if (config.isWebflow) {
+          const existing = currentMappingConnection?.[connectionKey]
+            ? findWebflowFieldBySlugOrName(cachedWebflowFields, currentMappingConnection[connectionKey])
+            : null;
+          const found = existing
+            || findWebflowFieldBySlugOrName(cachedWebflowFields, config.name)
+            || findWebflowFieldBySlugOrName(cachedWebflowFields, slugify(config.name));
+          const field = found || await createWebflowMetadataField(config);
+          if (!found) createdLabels.push(config.name);
+          payload[connectionKey] = field.slug;
+        } else {
+          const existing = currentMappingConnection?.[connectionKey]
+            ? findAirtableFieldByName(cachedAirtableFields, currentMappingConnection[connectionKey])
+            : null;
+          const found = existing || findAirtableFieldByName(cachedAirtableFields, config.name);
+          const field = found || await createAirtableMetadataField(config);
+          if (!found) createdLabels.push(config.name);
+          payload[connectionKey] = field.name;
+        }
+      }
+
+      const lastModifiedField = (
+        currentMappingConnection?.last_modified_field
+          ? findAirtableFieldByName(cachedAirtableFields, currentMappingConnection.last_modified_field)
+          : null
+      ) || cachedAirtableFields.find(f => f.type === 'lastModifiedTime');
+
+      if (lastModifiedField) {
+        payload.last_modified_field = lastModifiedField.name;
+      }
+
+      const res = await fetch(`${API}/connections/${currentMappingConnectionId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Failed to update connection metadata');
+      currentMappingConnection = data.connection;
+
+      if (createdLabels.length > 0) {
+        showToast(`Auto-created metadata fields: ${createdLabels.join(', ')}`, 'success');
+      }
+      if (!payload.last_modified_field) {
+        showToast('No Airtable "Last modified time" field found. Delta sync stays off until you add one manually.', 'warning');
+      }
+    }
 
     async function handleMetaFieldCreate(selectId) {
       const config = META_FIELD_DEFAULTS[selectId];
@@ -1285,7 +1420,7 @@
 
     // ─── Field Mappings ──────────────────────────────────────────
 
-    async function openMappingModal(connectionId) {
+    async function openMappingModal(connectionId, options = {}) {
       currentMappingConnectionId = connectionId;
       const [connRes, mappingsRes, allConnRes] = await Promise.all([
         fetch(`${API}/connections/${connectionId}`),
@@ -1329,6 +1464,9 @@
       }
 
       document.getElementById('mapping-modal').classList.add('active');
+      if (options.autoMap === true) {
+        runAutoMap();
+      }
     }
 
     // ─── Auto-Map ─────────────────────────────────────────────────
@@ -1854,6 +1992,13 @@
         if (failed > 0) {
           return; // Don't save if some fields failed — let user fix
         }
+      }
+
+      try {
+        await ensureConnectionMetadata();
+      } catch (err) {
+        showToast(err.message, 'error');
+        return;
       }
 
       // Now save all mappings
