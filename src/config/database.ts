@@ -9,15 +9,19 @@ function getSslConfig(): false | { rejectUnauthorized: false } {
     : false;
 }
 
+function getConnectionString(): string {
+  const connectionString = process.env.DATABASE_URL || process.env.POSTGRES_URL;
+  if (!connectionString) {
+    throw new Error('DATABASE_URL or POSTGRES_URL is not set');
+  }
+  return connectionString;
+}
+
 export function getDatabase(): Pool {
   if (!db) {
-    const connectionString = process.env.DATABASE_URL;
-    if (!connectionString) {
-      throw new Error('DATABASE_URL is not set');
-    }
-
     db = new Pool({
-      connectionString,
+      connectionString: getConnectionString(),
+      max: parseInt(process.env.PG_POOL_SIZE || '3', 10),
       ssl: getSslConfig(),
     });
   }

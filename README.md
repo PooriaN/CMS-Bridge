@@ -26,33 +26,31 @@ npm run dev
 
 The app defaults to `http://0.0.0.0:3456` and exposes a health check at `/api/health`.
 
-## Render deployment
+## Vercel deployment
 
-This repository includes a `render.yaml` blueprint that provisions:
-
-- a free Render Postgres database
-- a free Node web service
-- the `DATABASE_URL` connection string from that database
+This repository includes `vercel.json` and an API catch-all function at `api/[...route].js`.
 
 Required environment variables:
 
 - `AIRTABLE_API_KEY`
 - `WEBFLOW_API_TOKEN`
+- `DATABASE_URL` or `POSTGRES_URL`
 
 Optional environment variables:
 
 - `LOG_LEVEL`
-- `HOST`
-- `PORT`
 - `PGSSLMODE`
+- `PG_POOL_SIZE`
 
-Manual Render settings if you are not using the Blueprint:
+Recommended Vercel setup:
 
-- Build command: `npm ci && npm run build`
-- Start command: `npm start`
-- Health check path: `/api/health`
-- `DATABASE_URL`: your Render Postgres connection string
+- Framework Preset: `Other`
+- Build command: `npm run build`
+- Output directory: leave empty
+- Install command: `npm ci`
 
-## Free tier caveat
+The static dashboard is served from `public/`, and API requests are handled under `/api/*`.
 
-The app can now run on free Render without a paid disk, but scheduled syncs are not guaranteed on a free web service because free instances can spin down when idle. Manual syncs and on-demand use are the safer fit for the free plan.
+## Vercel free tier caveat
+
+The app is deployable on Vercel Hobby for manual or on-demand syncs. The in-process scheduler is not used on Vercel, so scheduled syncs are not supported by this setup on the free tier.

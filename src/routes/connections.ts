@@ -13,18 +13,28 @@ import { listSyncLogs } from '../models/sync-log';
 const router = Router();
 
 router.get('/', async (_req, res) => {
-  const connections = await listConnections();
-  res.json({ connections });
+  try {
+    const connections = await listConnections();
+    res.json({ connections });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    res.status(500).json({ error: message });
+  }
 });
 
 router.get('/:id', async (req, res) => {
-  const id = req.params.id as string;
-  const connection = await getConnection(id);
-  if (!connection) {
-    res.status(404).json({ error: 'Connection not found' });
-    return;
+  try {
+    const id = req.params.id as string;
+    const connection = await getConnection(id);
+    if (!connection) {
+      res.status(404).json({ error: 'Connection not found' });
+      return;
+    }
+    res.json({ connection });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    res.status(500).json({ error: message });
   }
-  res.json({ connection });
 });
 
 router.post('/', async (req, res) => {
@@ -38,34 +48,49 @@ router.post('/', async (req, res) => {
 });
 
 router.patch('/:id', async (req, res) => {
-  const id = req.params.id as string;
-  const connection = await updateConnection(id, req.body);
-  if (!connection) {
-    res.status(404).json({ error: 'Connection not found' });
-    return;
+  try {
+    const id = req.params.id as string;
+    const connection = await updateConnection(id, req.body);
+    if (!connection) {
+      res.status(404).json({ error: 'Connection not found' });
+      return;
+    }
+    res.json({ connection });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    res.status(500).json({ error: message });
   }
-  res.json({ connection });
 });
 
 router.delete('/:id', async (req, res) => {
-  const id = req.params.id as string;
-  const success = await deleteConnection(id);
-  if (!success) {
-    res.status(404).json({ error: 'Connection not found' });
-    return;
+  try {
+    const id = req.params.id as string;
+    const success = await deleteConnection(id);
+    if (!success) {
+      res.status(404).json({ error: 'Connection not found' });
+      return;
+    }
+    res.status(204).send();
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    res.status(500).json({ error: message });
   }
-  res.status(204).send();
 });
 
 router.get('/:id/mappings', async (req, res) => {
-  const id = req.params.id as string;
-  const connection = await getConnection(id);
-  if (!connection) {
-    res.status(404).json({ error: 'Connection not found' });
-    return;
+  try {
+    const id = req.params.id as string;
+    const connection = await getConnection(id);
+    if (!connection) {
+      res.status(404).json({ error: 'Connection not found' });
+      return;
+    }
+    const mappings = await getFieldMappings(id);
+    res.json({ mappings });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    res.status(500).json({ error: message });
   }
-  const mappings = await getFieldMappings(id);
-  res.json({ mappings });
 });
 
 router.put('/:id/mappings', async (req, res) => {
@@ -85,15 +110,20 @@ router.put('/:id/mappings', async (req, res) => {
 });
 
 router.get('/:id/logs', async (req, res) => {
-  const id = req.params.id as string;
-  const connection = await getConnection(id);
-  if (!connection) {
-    res.status(404).json({ error: 'Connection not found' });
-    return;
+  try {
+    const id = req.params.id as string;
+    const connection = await getConnection(id);
+    if (!connection) {
+      res.status(404).json({ error: 'Connection not found' });
+      return;
+    }
+    const limit = parseInt(req.query.limit as string, 10) || 20;
+    const logs = await listSyncLogs(id, limit);
+    res.json({ logs });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    res.status(500).json({ error: message });
   }
-  const limit = parseInt(req.query.limit as string, 10) || 20;
-  const logs = await listSyncLogs(id, limit);
-  res.json({ logs });
 });
 
 export default router;

@@ -8,7 +8,8 @@ import { createLogger } from './utils/logger';
 
 const httpLog = createLogger('http');
 
-export function createServer() {
+export function createServer(options?: { includeStatic?: boolean }) {
+  const includeStatic = options?.includeStatic ?? true;
   const app = express();
 
   app.use(cors());
@@ -22,8 +23,9 @@ export function createServer() {
     next();
   });
 
-  // Serve static frontend
-  app.use(express.static(path.join(__dirname, '..', 'public')));
+  if (includeStatic) {
+    app.use(express.static(path.join(__dirname, '..', 'public')));
+  }
 
   // API routes
   app.use('/api/connections', connectionsRouter);
@@ -35,10 +37,11 @@ export function createServer() {
     res.json({ status: 'ok', timestamp: new Date().toISOString() });
   });
 
-  // SPA fallback
-  app.get('*', (_req, res) => {
-    res.sendFile(path.join(__dirname, '..', 'public', 'index.html'));
-  });
+  if (includeStatic) {
+    app.get('*', (_req, res) => {
+      res.sendFile(path.join(__dirname, '..', 'public', 'index.html'));
+    });
+  }
 
   return app;
 }
