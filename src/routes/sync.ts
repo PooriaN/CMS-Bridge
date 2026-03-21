@@ -10,6 +10,7 @@ const runningSyncs = new Set<string>();
 router.post('/:connectionId', async (req, res) => {
   let activeConnectionId: string | undefined;
   try {
+    const authMode = res.locals.authMode as 'session' | 'automation' | undefined;
     const connectionId = req.params.connectionId as string;
     const connection = await getConnection(connectionId);
     if (!connection) {
@@ -35,7 +36,26 @@ router.post('/:connectionId', async (req, res) => {
 
     const dryRun = req.body.dryRun === true;
     const force = req.body.force === true;
-    const recordIds = req.body.recordIds as string[] | undefined;
+    const recordIds = Array.isArray(req.body.recordIds)
+      ? req.body.recordIds.filter((value: unknown): value is string => typeof value === 'string' && value.trim().length > 0)
+      : undefined;
+
+    if (authMode === 'automation') {
+      if (direction !== 'airtable_to_webflow') {
+        res.status(400).json({ error: 'Automation token requests only support "airtable_to_webflow"' });
+        return;
+      }
+
+      if (!recordIds || recordIds.length === 0) {
+        res.status(400).json({ error: 'Automation token requests require a non-empty "recordIds" array' });
+        return;
+      }
+
+      if (dryRun || force) {
+        res.status(400).json({ error: 'Automation token requests do not support "dryRun" or "force"' });
+        return;
+      }
+    }
 
     runningSyncs.add(connection.id);
     activeConnectionId = connection.id;

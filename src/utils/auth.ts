@@ -4,10 +4,15 @@ import type { Request, Response } from 'express';
 export const SESSION_COOKIE_NAME = 'cmsb_session';
 export const SESSION_VERSION = 'v1';
 export const SESSION_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+export const AUTOMATION_TOKEN_HEADER = 'x-cms-bridge-automation-token';
 
 type AuthConfig = {
   password: string;
   sessionSecret: string;
+};
+
+type AutomationConfig = {
+  token: string;
 };
 
 export function isProductionLike(): boolean {
@@ -23,6 +28,14 @@ export function getAuthConfig(): AuthConfig | null {
   }
 
   return { password, sessionSecret };
+}
+
+export function getAutomationConfig(): AutomationConfig | null {
+  const token = process.env.APP_AUTOMATION_TOKEN?.trim() || '';
+  if (!token) {
+    return null;
+  }
+  return { token };
 }
 
 export function parseCookies(cookieHeader?: string): Record<string, string> {
@@ -81,6 +94,13 @@ export function passwordMatches(candidate: string, password: string): boolean {
   return crypto.timingSafeEqual(candidateBuffer, passwordBuffer);
 }
 
+export function tokenMatches(candidate: string, token: string): boolean {
+  const candidateBuffer = Buffer.from(candidate, 'utf8');
+  const tokenBuffer = Buffer.from(token, 'utf8');
+  if (candidateBuffer.length !== tokenBuffer.length) return false;
+  return crypto.timingSafeEqual(candidateBuffer, tokenBuffer);
+}
+
 function shouldUseSecureCookies(req?: Request): boolean {
   if (!req) return isProductionLike();
   const forwardedProto = req.header('x-forwarded-proto');
@@ -102,8 +122,18 @@ export function hasValidSession(req: Request, config: AuthConfig): boolean {
   return verifySessionToken(cookies[SESSION_COOKIE_NAME], config.sessionSecret);
 }
 
+export function hasValidAutomationToken(req: Request, config: AutomationConfig): boolean {
+  const token = req.header(AUTOMATION_TOKEN_HEADER) || '';
+  if (!token) return false;
+  return tokenMatches(token, config.token);
+}
+
 export function isApiRequest(req: Request): boolean {
   return req.path.startsWith('/api/');
+}
+
+export function isAutomationSyncRequest(req: Request): boolean {
+  return req.method === 'POST' && /^\/api\/sync\/[^/]+$/.test(req.path);
 }
 
 export function wantsHtml(req: Request): boolean {

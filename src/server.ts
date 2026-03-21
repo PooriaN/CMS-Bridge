@@ -7,10 +7,14 @@ import syncRouter from './routes/sync';
 import discoveryRouter from './routes/discovery';
 import { createLogger } from './utils/logger';
 import {
+  AUTOMATION_TOKEN_HEADER,
   createSessionToken,
   getAuthConfig,
+  getAutomationConfig,
   hasValidSession,
+  hasValidAutomationToken,
   isApiRequest,
+  isAutomationSyncRequest,
   isProductionLike,
   passwordMatches,
   sendAuthUnavailable,
@@ -43,11 +47,25 @@ export function createServer(options?: { includeStatic?: boolean }) {
 
   app.use((req: Request, res: Response, next: NextFunction) => {
     const config = getAuthConfig();
+    const automationConfig = getAutomationConfig();
     const pathName = req.path;
     const apiRequest = isApiRequest(req);
     const htmlRequest = wantsHtml(req);
     const loginPath = pathName === '/login' || pathName === '/login.html';
     const logoutPath = pathName === '/logout';
+    const automationSyncRequest = isAutomationSyncRequest(req);
+    const hasAutomationHeader = Boolean(req.header(AUTOMATION_TOKEN_HEADER));
+
+    if (automationSyncRequest && hasAutomationHeader) {
+      if (automationConfig && hasValidAutomationToken(req, automationConfig)) {
+        res.locals.authMode = 'automation';
+        next();
+        return;
+      }
+
+      res.status(401).json({ error: 'Authentication required' });
+      return;
+    }
 
     if (!config) {
       if (!isProductionLike()) {
@@ -76,6 +94,7 @@ export function createServer(options?: { includeStatic?: boolean }) {
     }
 
     if (authenticated) {
+      res.locals.authMode = 'session';
       next();
       return;
     }

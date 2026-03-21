@@ -40,6 +40,7 @@ Required environment variables:
 
 Optional environment variables:
 
+- `APP_AUTOMATION_TOKEN` for Airtable automation-triggered syncs
 - `LOG_LEVEL`
 - `PGSSLMODE`
 - `PG_POOL_SIZE`
@@ -51,7 +52,7 @@ Recommended Vercel setup:
 - Output directory: leave empty
 - Install command: `npm ci`
 
-The static dashboard is served from `public/`, and API requests are handled under `/api/*`.
+The dashboard and API are served through the Vercel function so the auth gate can protect both.
 
 ## Access protection
 
@@ -62,6 +63,53 @@ This deployment is designed to be protected by a shared-password site gate on Ve
 - `/api/health` remains public for monitoring.
 
 If either auth variable is missing in production, the app fails closed and blocks access.
+
+## Airtable automation
+
+If you want Airtable Automations to trigger record-level Airtable-to-Webflow syncs, set `APP_AUTOMATION_TOKEN` in Vercel and use a separate secret from the dashboard password.
+
+Use this script pattern in Airtable Automations:
+
+```js
+// ── Config ──────────────────────────────────────────────────────────
+const CONNECTION_ID = 'your-connection-id';
+const CMS_BRIDGE_URL = 'https://cms-bridge.vercel.app';
+const CMS_BRIDGE_AUTOMATION_TOKEN = 'your-automation-token';
+// ────────────────────────────────────────────────────────────────────
+
+const { recordId } = input.config();
+if (!recordId) {
+  throw new Error('recordId is missing. Map the Airtable trigger record ID into the script input.');
+}
+
+const response = await fetch(`${CMS_BRIDGE_URL}/api/sync/${CONNECTION_ID}`, {
+  method: 'POST',
+  headers: {
+    'Content-Type': 'application/json',
+    'X-CMS-Bridge-Automation-Token': CMS_BRIDGE_AUTOMATION_TOKEN,
+  },
+  body: JSON.stringify({
+    direction: 'airtable_to_webflow',
+    recordIds: [recordId],
+  }),
+});
+
+const body = await response.text();
+const data = JSON.parse(body);
+
+if (!response.ok) {
+  throw new Error(`Sync failed (HTTP ${response.status}): ${body}`);
+}
+
+console.log(JSON.stringify(data));
+```
+
+Automation token rules:
+
+- only `POST /api/sync/:connectionId` accepts the token
+- only `direction: "airtable_to_webflow"` is allowed
+- `recordIds` must be present and non-empty
+- `force` and `dryRun` are rejected for automation-token requests
 
 ## Vercel free tier caveat
 
