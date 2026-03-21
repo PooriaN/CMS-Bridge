@@ -6,6 +6,16 @@ import { createLogger } from '../utils/logger';
 const log = createLogger('airtable');
 const META_API_BASE = 'https://api.airtable.com/v0/meta';
 
+function normalizeFieldTypeFromApi(type: string): AirtableField['type'] {
+  if (type === 'phoneNumber') return 'phone';
+  return type as AirtableField['type'];
+}
+
+function normalizeFieldTypeForApi(type: string): string {
+  if (type === 'phone') return 'phoneNumber';
+  return type;
+}
+
 function getApiKey(): string {
   const rawKey = process.env.AIRTABLE_API_KEY;
   if (!rawKey) throw new Error('AIRTABLE_API_KEY is not set');
@@ -49,12 +59,12 @@ export async function getTableSchema(baseId: string): Promise<AirtableTable[]> {
   return data.tables.map(t => ({
     id: t.id,
     name: t.name,
-    fields: t.fields.map(f => ({
-      id: f.id,
-      name: f.name,
-      type: f.type as AirtableField['type'],
-      options: f.options,
-    })),
+      fields: t.fields.map(f => ({
+        id: f.id,
+        name: f.name,
+        type: normalizeFieldTypeFromApi(f.type),
+        options: f.options,
+      })),
     views: t.views.map(v => ({
       id: v.id,
       name: v.name,
@@ -175,7 +185,7 @@ export async function createField(
 
   const body: Record<string, unknown> = {
     name: field.name,
-    type: field.type,
+    type: normalizeFieldTypeForApi(field.type),
   };
   if (resolvedOptions) body.options = resolvedOptions;
 
@@ -188,7 +198,7 @@ export async function createField(
   return {
     id: data.id,
     name: data.name,
-    type: data.type as AirtableField['type'],
+    type: normalizeFieldTypeFromApi(data.type),
     options: data.options,
   };
 }
