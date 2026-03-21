@@ -485,6 +485,14 @@ async function syncOneRecordToWebflow(
       // If no linked_connection_id is configured, we auto-detect by searching
       // all other connections' record maps for a matching Airtable record ID.
       if (mapping.webflow_field_type === 'Reference' || mapping.webflow_field_type === 'MultiReference') {
+        if (mapping.airtable_field_type !== 'multipleRecordLinks') {
+          logger.warn(
+            `Reference field "${mapping.webflow_field_slug}" is mapped to incompatible Airtable field "${mapping.airtable_field_name}" (${mapping.airtable_field_type}) — expected multipleRecordLinks; skipping field`,
+            { airtableFieldId: mapping.airtable_field_id, webflowFieldId: mapping.webflow_field_id }
+          );
+          continue;
+        }
+
         const atRecordIds = extractAirtableRecordIds(rawValue);
         if (atRecordIds.length === 0) continue;
 
@@ -901,6 +909,14 @@ async function syncOneRecordToAirtable(
       // If no linked_connection_id is configured, we auto-detect by searching
       // all other connections' record maps for a matching Webflow item ID.
       if (mapping.webflow_field_type === 'Reference' || mapping.webflow_field_type === 'MultiReference') {
+        if (mapping.airtable_field_type !== 'multipleRecordLinks') {
+          logger.warn(
+            `Reference field "${mapping.webflow_field_slug}" is mapped to incompatible Airtable field "${mapping.airtable_field_name}" (${mapping.airtable_field_type}) — expected multipleRecordLinks; skipping field`,
+            { airtableFieldId: mapping.airtable_field_id, webflowFieldId: mapping.webflow_field_id }
+          );
+          continue;
+        }
+
         const wfItemIds = extractWebflowItemIds(rawValue);
         if (wfItemIds.length === 0) continue;
 

@@ -9,6 +9,7 @@ import {
   getFieldMappings,
 } from '../models/connection';
 import { listSyncLogs } from '../models/sync-log';
+import { isCompatible } from '../services/field-mapper';
 
 const router = Router();
 
@@ -101,7 +102,27 @@ router.put('/:id/mappings', async (req, res) => {
     return;
   }
   try {
-    const mappings = await setFieldMappings(id, req.body.mappings || []);
+    const requestedMappings = req.body.mappings || [];
+
+    for (const mapping of requestedMappings) {
+      if (!isCompatible(mapping.airtable_field_type, mapping.webflow_field_type)) {
+        res.status(400).json({
+          error: `Incompatible mapping: "${mapping.webflow_field_slug}" (${mapping.webflow_field_type}) cannot map to "${mapping.airtable_field_name}" (${mapping.airtable_field_type})`,
+        });
+        return;
+      }
+
+      const isReferenceField =
+        mapping.webflow_field_type === 'Reference' || mapping.webflow_field_type === 'MultiReference';
+      if (isReferenceField && mapping.airtable_field_type !== 'multipleRecordLinks') {
+        res.status(400).json({
+          error: `Reference fields must map to Airtable "Link to another record" fields. "${mapping.webflow_field_slug}" is currently mapped to "${mapping.airtable_field_name}" (${mapping.airtable_field_type})`,
+        });
+        return;
+      }
+    }
+
+    const mappings = await setFieldMappings(id, requestedMappings);
     res.json({ mappings });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
