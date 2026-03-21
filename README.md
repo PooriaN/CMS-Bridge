@@ -35,6 +35,8 @@ Required environment variables:
 - `AIRTABLE_API_KEY`
 - `WEBFLOW_API_TOKEN`
 - `DATABASE_URL` or `POSTGRES_URL`
+- `APP_PASSWORD`
+- `APP_SESSION_SECRET`
 
 Optional environment variables:
 
@@ -50,6 +52,16 @@ Recommended Vercel setup:
 - Install command: `npm ci`
 
 The static dashboard is served from `public/`, and API requests are handled under `/api/*`.
+
+## Access protection
+
+This deployment is designed to be protected by a shared-password site gate on Vercel Hobby.
+
+- `APP_PASSWORD` controls the shared login password.
+- `APP_SESSION_SECRET` signs the session cookie.
+- `/api/health` remains public for monitoring.
+
+If either auth variable is missing in production, the app fails closed and blocks access.
 
 ## Vercel free tier caveat
 

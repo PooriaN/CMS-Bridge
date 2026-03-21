@@ -46,6 +46,12 @@
 
     header h1 span { color: var(--accent); }
 
+    .header-actions {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
     .status-dot {
       display: inline-block;
       width: 8px;
@@ -657,9 +663,12 @@
 <body>
   <header>
     <h1><span>CMS</span> Bridge</h1>
-    <div id="health-status">
-      <span class="status-dot" id="health-dot"></span>
-      <span id="health-text" style="font-size:13px; color:var(--text-dim)">Checking...</span>
+    <div class="header-actions">
+      <div id="health-status">
+        <span class="status-dot" id="health-dot"></span>
+        <span id="health-text" style="font-size:13px; color:var(--text-dim)">Checking...</span>
+      </div>
+      <button type="button" class="secondary" onclick="logout()">Log out</button>
     </div>
   </header>
 
@@ -905,6 +914,14 @@
       } catch {
         document.getElementById('health-dot').className = 'status-dot error';
         document.getElementById('health-text').textContent = 'Disconnected';
+      }
+    }
+
+    async function logout() {
+      try {
+        await fetch(`${API}/logout`, { method: 'POST' });
+      } finally {
+        window.location.href = '/login';
       }
     }
 
