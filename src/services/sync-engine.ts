@@ -191,6 +191,13 @@ async function syncAirtableToWebflow(
   mappings: FieldMapping[],
   options: SyncOptions
 ): Promise<SyncRecordResult[]> {
+  const collection = await webflow.getCollection(connection.webflow_collection_id);
+  const requiredEditableFieldSlugs = new Set(
+    collection.fields
+      .filter(field => field.isRequired && field.isEditable)
+      .map(field => field.slug)
+  );
+
   // Fetch all Airtable records
   const atRecords = await airtable.listRecords(
     connection.airtable_base_id,
@@ -310,7 +317,14 @@ async function syncAirtableToWebflow(
       }
     }
 
-    const result = await syncOneRecordToWebflow(connection, record, mappings, options, publishIds);
+    const result = await syncOneRecordToWebflow(
+      connection,
+      record,
+      mappings,
+      options,
+      publishIds,
+      requiredEditableFieldSlugs
+    );
     results.push(result);
 
     // Track successful syncs for re-stamping last_synced_at after write-back (see below)
@@ -462,7 +476,8 @@ async function syncOneRecordToWebflow(
   record: AirtableRecord,
   mappings: FieldMapping[],
   options: SyncOptions,
-  publishIds: string[] = []
+  publishIds: string[] = [],
+  requiredEditableFieldSlugs: Set<string> = new Set()
 ): Promise<SyncRecordResult> {
   try {
     // Read the action field value once — used throughout this function
@@ -483,6 +498,8 @@ async function syncOneRecordToWebflow(
       }
       return { source_id: record.id, action: 'skipped' };
     }
+
+    const existingMap = await getRecordMapping(connection.id, record.id);
 
     // Build Webflow field data from mappings
     const fieldData: Record<string, unknown> = {};
@@ -534,6 +551,32 @@ async function syncOneRecordToWebflow(
         converted = convertAirtableToWebflow(rawValue, mapping);
       }
 
+      const shouldPreserveExistingRequiredValue =
+        !!existingMap &&
+        !mapping.is_name_field &&
+        !mapping.is_slug_field &&
+        requiredEditableFieldSlugs.has(mapping.webflow_field_slug) &&
+        (converted === null || converted === undefined || converted === '');
+
+      if (shouldPreserveExistingRequiredValue) {
+        logger.debug('Preserving existing required Webflow field on update because Airtable value is empty', {
+          airtableId: record.id,
+          webflowFieldSlug: mapping.webflow_field_slug,
+          airtableFieldName: mapping.airtable_field_name,
+        });
+        continue;
+      }
+
+      if (existingMap && (mapping.is_name_field || mapping.is_slug_field) && (converted === null || converted === undefined || converted === '')) {
+        logger.debug('Preserving existing Webflow name/slug on update because Airtable value is empty', {
+          airtableId: record.id,
+          webflowFieldSlug: mapping.webflow_field_slug,
+          airtableFieldName: mapping.airtable_field_name,
+          specialField: mapping.is_name_field ? 'name' : 'slug',
+        });
+        continue;
+      }
+
       if (mapping.is_name_field) {
         fieldData['name'] = converted;
       } else if (mapping.is_slug_field) {
@@ -560,9 +603,6 @@ async function syncOneRecordToWebflow(
         action: existing ? 'updated' : 'created',
       };
     }
-
-    // Check if record already exists in Webflow
-    const existingMap = await getRecordMapping(connection.id, record.id);
 
     if (existingMap) {
       // Update existing item
