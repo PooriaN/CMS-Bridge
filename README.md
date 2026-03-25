@@ -77,7 +77,9 @@ const CMS_BRIDGE_URL = 'https://cms-bridge.vercel.app';
 const CMS_BRIDGE_AUTOMATION_TOKEN = 'your-automation-token';
 // ────────────────────────────────────────────────────────────────────
 
-const { recordId } = input.config();
+const rawRecordId = String(input.config().recordId ?? '');
+const recordId = rawRecordId.match(/\brec[a-zA-Z0-9]{14}\b/)?.[0] ?? rawRecordId.trim();
+
 if (!recordId) {
   throw new Error('recordId is missing. Map the Airtable trigger record ID into the script input.');
 }

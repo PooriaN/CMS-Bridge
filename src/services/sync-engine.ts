@@ -217,6 +217,18 @@ async function syncAirtableToWebflow(
     : atRecords;
 
   const results: SyncRecordResult[] = [];
+  if (options.recordIds) {
+    const foundIds = new Set(recordsToSync.map(record => record.id));
+    for (const recordId of options.recordIds) {
+      if (!foundIds.has(recordId)) {
+        results.push({
+          source_id: recordId,
+          action: 'failed',
+          error: 'Airtable record not found for provided recordId',
+        });
+      }
+    }
+  }
   const existingMappings = await getAllRecordMappings(connection.id);
   const processedAirtableIds = new Set<string>();
   const metadataUpdates: { id: string; fields: Record<string, unknown> }[] = [];
@@ -628,6 +640,18 @@ async function syncWebflowToAirtable(
     : wfItems;
 
   const results: SyncRecordResult[] = [];
+  if (options.recordIds) {
+    const foundIds = new Set(itemsToSync.map(item => item.id));
+    for (const recordId of options.recordIds) {
+      if (!foundIds.has(recordId)) {
+        results.push({
+          source_id: recordId,
+          action: 'failed',
+          error: 'Webflow item not found for provided recordId',
+        });
+      }
+    }
+  }
   const existingMappings = await getAllRecordMappings(connection.id);
   const processedWebflowIds = new Set<string>();
 

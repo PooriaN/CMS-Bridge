@@ -7,6 +7,27 @@ const router = Router();
 
 const runningSyncs = new Set<string>();
 
+function normalizeRecordIds(rawRecordIds: unknown, direction: string | undefined): string[] | undefined {
+  if (!Array.isArray(rawRecordIds)) return undefined;
+
+  const normalized = rawRecordIds
+    .filter((value: unknown): value is string => typeof value === 'string')
+    .map(value => {
+      const trimmed = value.trim();
+      if (!trimmed) return '';
+
+      if (direction === 'airtable_to_webflow') {
+        const airtableIdMatch = trimmed.match(/\brec[a-zA-Z0-9]{14}\b/);
+        return airtableIdMatch?.[0] ?? trimmed;
+      }
+
+      return trimmed;
+    })
+    .filter(Boolean);
+
+  return normalized.length > 0 ? [...new Set(normalized)] : undefined;
+}
+
 router.post('/:connectionId', async (req, res) => {
   let activeConnectionId: string | undefined;
   try {
@@ -36,9 +57,7 @@ router.post('/:connectionId', async (req, res) => {
 
     const dryRun = req.body.dryRun === true;
     const force = req.body.force === true;
-    const recordIds = Array.isArray(req.body.recordIds)
-      ? req.body.recordIds.filter((value: unknown): value is string => typeof value === 'string' && value.trim().length > 0)
-      : undefined;
+    const recordIds = normalizeRecordIds(req.body.recordIds, direction);
 
     if (authMode === 'automation') {
       if (direction !== 'airtable_to_webflow') {
